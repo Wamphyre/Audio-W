@@ -78,3 +78,4 @@ La BSD 3-Clause License es una licencia de software libre permisiva que permite 
 ---
 
 Desarrollado con ❤️ por [Wamphyre](https://github.com/Wamphyre)
+Si te gusta puedes comprarme un café en https://ko-fi.com/wamphyre94078
