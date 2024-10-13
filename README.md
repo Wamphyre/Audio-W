@@ -5,7 +5,7 @@ Audio-W es un reproductor de audio ligero y elegante desarrollado en Python, dis
 ## Características
 
 - Interfaz gráfica intuitiva y moderna con tema oscuro
-- Reproducción de archivos de audio en formatos MP3, WAV y OGG
+- Reproducción de archivos de audio en formatos MP3, WAV, OGG y FLAC
 - Lista de reproducción con función de arrastrar y soltar
 - Control de volumen integrado
 - Barra de progreso interactiva
