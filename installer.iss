@@ -1,5 +1,5 @@
 #define MyAppName "Audio-W"
-#define MyAppVersion "1.0"
+#define MyAppVersion "1.1"
 #define MyAppPublisher "Wamphyre"
 #define MyAppExeName "Audio-W.exe"
 
@@ -43,6 +43,7 @@ Root: HKCU; Subkey: "Software\Classes\Audio-W\shell\open\command"; ValueType: st
 Root: HKCU; Subkey: "Software\Classes\.mp3\OpenWithProgids"; ValueType: string; ValueName: "Audio-W"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associateaudiofiles
 Root: HKCU; Subkey: "Software\Classes\.wav\OpenWithProgids"; ValueType: string; ValueName: "Audio-W"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associateaudiofiles
 Root: HKCU; Subkey: "Software\Classes\.ogg\OpenWithProgids"; ValueType: string; ValueName: "Audio-W"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associateaudiofiles
+Root: HKCU; Subkey: "Software\Classes\.flac\OpenWithProgids"; ValueType: string; ValueName: "Audio-W"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associateaudiofiles
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
@@ -96,6 +97,9 @@ begin
     Lines.Add('');
     Lines.Add('[HKEY_CURRENT_USER\Software\Classes\.ogg]');
     Lines.Add('"Audio-W"=""');
+    Lines.Add('');
+    Lines.Add('[HKEY_CURRENT_USER\Software\Classes\.flac]');
+    Lines.Add('"Audio-W"=""');
     Lines.SaveToFile(FileName);
   finally
     Lines.Free;
@@ -131,6 +135,7 @@ begin
         RegDeleteValue(HKCU, 'Software\Classes\.mp3\OpenWithProgids', 'Audio-W');
         RegDeleteValue(HKCU, 'Software\Classes\.wav\OpenWithProgids', 'Audio-W');
         RegDeleteValue(HKCU, 'Software\Classes\.ogg\OpenWithProgids', 'Audio-W');
+        RegDeleteValue(HKCU, 'Software\Classes\.flac\OpenWithProgids', 'Audio-W');
       end;
     usPostUninstall:
       begin

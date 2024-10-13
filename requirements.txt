@@ -6,3 +6,4 @@ soundfile
 numpy
 scipy
 requests
+mutagen

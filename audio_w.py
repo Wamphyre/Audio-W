@@ -18,8 +18,13 @@ import subprocess
 import winreg
 from PIL import Image, ImageTk
 import logging
+from mutagen import File
+from mutagen.wave import WAVE
+from mutagen.mp3 import MP3
+from mutagen.oggvorbis import OggVorbis
+from mutagen.flac import FLAC
 
-logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class AudioPlayer:
     def __init__(self):
@@ -33,10 +38,26 @@ class AudioPlayer:
 
     def load(self, file_path):
         self.stop()
-        self.current_song, self.samplerate = sf.read(file_path, dtype='float32')
-        self.current_frame = 0
-        self.paused = False
-        self.stop_flag = False
+        try:
+            data, self.samplerate = sf.read(file_path, dtype='float32')
+            if data.ndim == 1:  # Mono
+                self.current_song = np.column_stack((data, data))
+            elif data.ndim == 2:  # Estéreo o más canales
+                if data.shape[1] > 2:
+                    self.current_song = data[:, :2]  # Tomar solo los dos primeros canales
+                else:
+                    self.current_song = data
+            else:
+                raise ValueError("Formato de audio no soportado")
+
+            self.current_frame = 0
+            self.paused = False
+            self.stop_flag = False
+        except Exception as e:
+            logging.error(f"Error al cargar el archivo {file_path}: {str(e)}")
+            messagebox.showerror("Error", f"No se pudo cargar el archivo: {os.path.basename(file_path)}\nError: {str(e)}")
+            return False
+        return True
 
     def play(self):
         if self.paused:
@@ -82,7 +103,7 @@ class AudioPlayer:
             self.current_frame = int(position * len(self.current_song))
 
     def get_position(self):
-        if self.current_song is not None:
+        if self.current_song is not None and len(self.current_song) > 0:
             return self.current_frame / len(self.current_song)
         return 0
 
@@ -101,9 +122,7 @@ class AudioW(TkinterDnD.Tk):
 
         # Configurar el icono de la aplicación
         if os.path.exists('icon.ico'):
-            icon = Image.open('icon.ico')
-            icon = ImageTk.PhotoImage(icon)
-            self.iconphoto(True, icon)
+            self.iconbitmap('icon.ico')
         else:
             logging.warning("No se encontró el archivo 'icon.ico'")
 
@@ -175,7 +194,8 @@ class AudioW(TkinterDnD.Tk):
         volume_frame.grid(row=4, column=0, pady=5, sticky="ew")
         volume_frame.columnconfigure(1, weight=1)
 
-        ttk.Label(volume_frame, text="Vol", font=("Helvetica", 8)).grid(row=0, column=0, padx=(0, 5))
+        self.volume_label = ttk.Label(volume_frame, text="Vol: 95%", font=("Helvetica", 8))
+        self.volume_label.grid(row=0, column=0, padx=(0, 5))
         self.volume_scale = ttk.Scale(volume_frame, from_=0, to=100, orient=tk.HORIZONTAL, command=self.set_volume, value=95)
         self.volume_scale.grid(row=0, column=1, sticky="ew")
 
@@ -214,22 +234,59 @@ class AudioW(TkinterDnD.Tk):
     def drop_files(self, event):
         files = self.tk.splitlist(event.data)
         for file in files:
-            if file.lower().endswith(('.mp3', '.wav', '.ogg')):
+            if file.lower().endswith(('.mp3', '.wav', '.ogg', '.flac')):
                 self.add_song(file)
 
     def add_song(self, file_path):
         if os.path.isfile(file_path):
             try:
-                title = os.path.basename(file_path)
-                artist = "Desconocido"
+                title, artist = self.get_audio_metadata(file_path)
                 self.playlist.append((file_path, title, artist))
-                self.playlist_box.insert("", tk.END, values=(title,))
-                if not self.player.current_song:
+                self.playlist_box.insert("", tk.END, values=(f"{artist} - {title}",))
+                if self.player.current_song is None:
                     self.current_song_index = 0
-                    self.player.load(file_path)
-                    self.play_song()
+                    if self.player.load(file_path):
+                        self.play_song()
+                    else:
+                        raise Exception("No se pudo cargar el archivo de audio")
             except Exception as e:
                 logging.error(f"No se pudo añadir el archivo: {file_path}. Error: {str(e)}")
+                messagebox.showerror("Error", f"No se pudo añadir el archivo: {os.path.basename(file_path)}\nError: {str(e)}")
+
+    def get_audio_metadata(self, file_path):
+        try:
+            logging.debug(f"Procesando archivo: {file_path}")
+            audio = File(file_path, easy=True)
+            logging.debug(f"Metadatos raw: {audio}")
+            
+            title = self.get_first_value(audio.get('title', []))
+            artist = self.get_first_value(audio.get('artist', []))
+            
+            if not title:
+                title = os.path.splitext(os.path.basename(file_path))[0]
+            if not artist:
+                artist = 'Desconocido'
+            
+            logging.debug(f"Metadatos procesados - Título: {title}, Artista: {artist}")
+            return title, artist
+        except Exception as e:
+            logging.error(f"Error al obtener metadatos de {file_path}: {str(e)}")
+            return os.path.splitext(os.path.basename(file_path))[0], 'Desconocido'
+
+    def get_first_value(self, value):
+        if isinstance(value, (list, tuple)) and value:
+            return self.get_first_value(value[0])
+        elif isinstance(value, str):
+            return value
+        elif isinstance(value, np.ndarray):
+            if value.size > 0:
+                return self.get_first_value(value.item())
+            else:
+                return ''
+        elif hasattr(value, 'text'):
+            return value.text
+        else:
+            return str(value)
 
     def remove_song(self, event=None):
         selected = self.playlist_box.selection()
@@ -248,8 +305,8 @@ class AudioW(TkinterDnD.Tk):
         if selection:
             index = self.playlist_box.index(selection[0])
             self.current_song_index = index
-            self.player.load(self.playlist[index][0])
-            self.play_song()
+            if self.player.load(self.playlist[index][0]):
+                self.play_song()
 
     def play_pause(self):
         if self.player.current_song is None:
@@ -275,18 +332,19 @@ class AudioW(TkinterDnD.Tk):
     def prev_song(self):
         if self.playlist:
             self.current_song_index = (self.current_song_index - 1) % len(self.playlist)
-            self.player.load(self.playlist[self.current_song_index][0])
-            self.play_song()
+            if self.player.load(self.playlist[self.current_song_index][0]):
+                self.play_song()
 
     def next_song(self):
         if self.playlist:
             self.current_song_index = (self.current_song_index + 1) % len(self.playlist)
-            self.player.load(self.playlist[self.current_song_index][0])
-            self.play_song()
+            if self.player.load(self.playlist[self.current_song_index][0]):
+                self.play_song()
 
     def set_volume(self, val):
         volume = float(val) / 100
         self.player.set_volume(volume)
+        self.volume_label.config(text=f"Vol: {int(float(val))}%")
 
     def update_song_info(self):
         if self.player.current_song is not None and 0 <= self.current_song_index < len(self.playlist):
@@ -351,13 +409,10 @@ class AudioW(TkinterDnD.Tk):
             current_version = self.get_current_version()
 
             if latest_version > current_version:
-                if messagebox.askyesno("Actualización disponible", 
-                                       f"Hay una nueva versión disponible: {latest_version}\n¿Desea actualizar?"):
-                    exe_asset = next((asset for asset in latest_release['assets'] if asset['name'].endswith('.exe')), None)
-                    if exe_asset:
-                        self.download_and_install_update(exe_asset['browser_download_url'], exe_asset['name'])
-                    else:
-                        messagebox.showinfo("No se encontró actualización", "No se encontró un archivo .exe para la actualización.")
+                messagebox.showinfo("Actualización disponible", 
+                                    f"Hay una nueva versión disponible: {latest_version}\n"
+                                    f"Por favor, visite nuestro repositorio para descargarla e instalarla:\n"
+                                    f"https://github.com/Wamphyre/Audio-W/releases")
             else:
                 logging.info("El software está actualizado.")
         except Exception as e:
@@ -366,27 +421,10 @@ class AudioW(TkinterDnD.Tk):
             self.save_last_check_date()
 
     def get_current_version(self):
-        # Implementa esto para obtener la versión actual de tu software
-        return "v1.0.0"  # Ejemplo
-
-    def download_and_install_update(self, url, filename):
-        try:
-            response = requests.get(url)
-            update_file = os.path.join(self.get_app_data_path(), filename)
-            with open(update_file, "wb") as f:
-                f.write(response.content)
-
-            messagebox.showinfo("Descarga completada", "La actualización se ha descargado. La aplicación se cerrará para instalar la actualización.")
-            
-            # Iniciar el nuevo ejecutable y cerrar la aplicación actual
-            subprocess.Popen([update_file])
-            self.quit()
-        except Exception as e:
-            logging.error(f"Error de actualización: {str(e)}")
-            messagebox.showerror("Error de actualización", f"No se pudo descargar la actualización: {str(e)}")
+        return "v1.1"
 
 def register_file_types():
-    file_types = ['.mp3', '.wav', '.ogg']
+    file_types = ['.mp3', '.wav', '.ogg', '.flac']
     executable = sys.executable
     if executable.endswith('python.exe'):  # Si se está ejecutando desde el intérprete
         executable = os.path.abspath(sys.argv[0])
