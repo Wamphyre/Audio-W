@@ -11,7 +11,6 @@ Audio-W es un reproductor de audio ligero y elegante desarrollado en Python, dis
 - Barra de progreso interactiva
 - Controles de reproducción (play, pause, stop, anterior, siguiente)
 - Asociación de archivos de audio (opcional durante la instalación)
-- Sistema de actualización automática
 
 ## Requisitos del sistema
 
