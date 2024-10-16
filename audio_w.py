@@ -1,455 +1,518 @@
-import tkinter as tk
-from tkinter import filedialog, messagebox
-import ttkbootstrap as ttk
-from ttkbootstrap.constants import *
 import os
 import sys
-import ctypes
-from tkinterdnd2 import DND_FILES, TkinterDnD
+import tkinter as tk
+from tkinter import messagebox
+import time as python_time
 import threading
-import time
+import concurrent.futures
+
+def _get_tkdnd_library_path():
+    if getattr(sys, 'frozen', False):
+        return os.path.join(sys._MEIPASS, 'tkinterdnd2', 'tkdnd')
+    else:
+        import tkinterdnd2
+        return os.path.join(os.path.dirname(tkinterdnd2.__file__), 'tkdnd')
+
+os.environ['TKDND_LIBRARY'] = _get_tkdnd_library_path()
+
+try:
+    from tkinterdnd2 import TkinterDnD, DND_FILES
+except ImportError:
+    print("No se pudo importar tkinterdnd2. La funcionalidad de arrastrar y soltar estará deshabilitada.")
+    TkinterDnD = tk.Tk
+    DND_FILES = None
+
+import ttkbootstrap as ttk
+from ttkbootstrap.constants import *
 import sounddevice as sd
 import soundfile as sf
-import numpy as np
-import requests
-import json
-from datetime import datetime, timedelta
-import subprocess
-import winreg
-from PIL import Image, ImageTk
-import logging
 from mutagen import File
 from mutagen.wave import WAVE
 from mutagen.mp3 import MP3
-from mutagen.oggvorbis import OggVorbis
 from mutagen.flac import FLAC
+import numpy as np
+import win32event
+import win32api
+import winerror
+import win32gui
+import win32con
+import pywintypes
 
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
-
-class AudioPlayer:
+class SingleInstanceApp:
     def __init__(self):
-        self.current_song = None
-        self.paused = False
-        self.stop_flag = False
-        self.current_frame = 0
-        self.volume = 0.95  # Volumen por defecto al 95%
-        self.stream = None
-        self.samplerate = 44100
-
-    def load(self, file_path):
-        self.stop()
-        try:
-            data, self.samplerate = sf.read(file_path, dtype='float32')
-            if data.ndim == 1:  # Mono
-                self.current_song = np.column_stack((data, data))
-            elif data.ndim == 2:  # Estéreo o más canales
-                if data.shape[1] > 2:
-                    self.current_song = data[:, :2]  # Tomar solo los dos primeros canales
-                else:
-                    self.current_song = data
-            else:
-                raise ValueError("Formato de audio no soportado")
-
-            self.current_frame = 0
-            self.paused = False
-            self.stop_flag = False
-        except Exception as e:
-            logging.error(f"Error al cargar el archivo {file_path}: {str(e)}")
-            messagebox.showerror("Error", f"No se pudo cargar el archivo: {os.path.basename(file_path)}\nError: {str(e)}")
-            return False
-        return True
-
-    def play(self):
-        if self.paused:
-            self.paused = False
-            return
+        self.mutexname = "AudioW_v1.2_{D0E858DF-985E-4907-B7FB-8D732C3FC3B9}"
+        self.mutex = win32event.CreateMutex(None, False, self.mutexname)
+        self.lasterror = win32api.GetLastError()
         
-        def callback(outdata, frames, time, status):
-            if status:
-                print(status)
-            chunksize = min(len(self.current_song) - self.current_frame, frames)
-            outdata[:chunksize] = self.current_song[self.current_frame:self.current_frame + chunksize]
-            if chunksize < frames:
-                outdata[chunksize:] = 0
-                raise sd.CallbackStop()
-            self.current_frame += chunksize
-            
-            # Apply volume
-            outdata *= self.volume
+    def already_running(self):
+        return (self.lasterror == winerror.ERROR_ALREADY_EXISTS)
 
-        self.stream = sd.OutputStream(
-            samplerate=self.samplerate, channels=self.current_song.shape[1],
-            callback=callback, finished_callback=self.song_finished)
-        self.stream.start()
-
-    def song_finished(self):
-        self.stop()
-
-    def pause(self):
-        if self.stream:
-            self.stream.stop()
-        self.paused = True
-
-    def stop(self):
-        self.stop_flag = True
-        if self.stream:
-            self.stream.stop()
-            self.stream.close()
-        self.current_frame = 0
-        self.paused = False
-
-    def set_position(self, position):
-        if self.current_song is not None:
-            self.current_frame = int(position * len(self.current_song))
-
-    def get_position(self):
-        if self.current_song is not None and len(self.current_song) > 0:
-            return self.current_frame / len(self.current_song)
-        return 0
-
-    def set_volume(self, volume):
-        self.volume = volume
+    def activate_running_instance(self, file_path=None):
+        try:
+            handle = win32gui.FindWindow(None, "Audio-W v1.2")
+            if handle:
+                win32gui.ShowWindow(handle, win32con.SW_RESTORE)
+                win32gui.SetForegroundWindow(handle)
+                
+                if file_path:
+                    win32gui.PostMessage(handle, win32con.WM_USER + 1, 0, 0)
+                    with open('temp_file_path.txt', 'w') as f:
+                        f.write(file_path)
+                return True
+        except Exception as e:
+            print(f"Error al activar la instancia en ejecución: {e}")
+        return False
 
 class AudioW(TkinterDnD.Tk):
     def __init__(self):
         super().__init__()
-
-        self.style = ttk.Style(theme="darkly")
-        self.configure_styles()
-        self.title("Audio-W")
-        self.geometry("300x400")
-        self.configure(bg='#2E2E2E')
-
-        # Configurar el icono de la aplicación
-        if os.path.exists('icon.ico'):
-            self.iconbitmap('icon.ico')
-        else:
-            logging.warning("No se encontró el archivo 'icon.ico'")
-
-        self.player = AudioPlayer()
+        
+        self.title("Audio-W v1.2")
+        self.geometry("300x450")  # Ajustado el tamaño de la ventana
+        self.configure(bg='#1E1E1E')
+        
+        icon_path = self.get_icon_path()
+        if icon_path:
+            try:
+                self.iconbitmap(icon_path)
+            except tk.TclError:
+                print(f"No se pudo cargar el icono desde {icon_path}. Usando el icono por defecto.")
+        
+        self.style = ttk.Style("darkly")
+        self.style.configure("TFrame", background='#1E1E1E')
+        self.style.configure("TLabel", background='#1E1E1E', foreground='#FFFFFF')
+        self.style.configure("TButton", background='#2E2E2E', foreground='#FFFFFF')
+        self.style.configure("Horizontal.TScale", background='#1E1E1E', troughcolor='#2E2E2E')
+        self.style.configure('Treeview', background='#2E2E2E', fieldbackground='#2E2E2E', foreground='#FFFFFF')
+        self.style.configure('Treeview.Heading', background='#1E1E1E', foreground='#FFFFFF', relief='flat')
+        self.style.map('Treeview', background=[('selected', '#3E3E3E')])
+        
+        self.current_song = None
         self.playlist = []
-        self.current_song_index = -1
+        self.is_playing = False
+        self.audio_thread = None
+        self.stream = None
+        
+        self.visualizer_update_interval = 100  # Actualizar el visualizador cada 100ms
+        self.last_visualizer_update = 0
+        
+        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        self.play_future = None
+        self.buffer_size = 2048  # Tamaño de buffer aumentado
+        
+        self.total_duration = 0  # Variable para almacenar la duración total
+        
+        self.create_widgets()
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
+        
+        if DND_FILES:
+            self.drop_target_register(DND_FILES)
+            self.dnd_bind('<<Drop>>', self.on_drop)
 
-        self.create_gui()
+        self.bind("<Map>", self.on_map)
+        self.after(100, self.check_for_new_file)
 
-        if len(sys.argv) > 1:
-            self.add_song(sys.argv[1])
+    def get_icon_path(self):
+        if getattr(sys, 'frozen', False):
+            return os.path.join(sys._MEIPASS, 'icon.ico')
+        else:
+            return 'icon.ico' if os.path.exists('icon.ico') else None
+    
+    def on_map(self, event):
+        message = win32gui.RegisterWindowMessage("AudioWNewFile")
+        self.bind(f"<<Message-{message}>>", self.handle_new_file)
 
-        self.update_thread = threading.Thread(target=self._update_thread, daemon=True)
-        self.update_thread.start()
+    def handle_new_file(self, event):
+        try:
+            with open('temp_file_path.txt', 'r') as f:
+                file_path = f.read().strip()
+            os.remove('temp_file_path.txt')
+            self.add_and_play_file(file_path)
+        except Exception as e:
+            print(f"Error al manejar el nuevo archivo: {e}")
 
-        # Iniciar el sistema de actualizaciones
-        self.check_for_updates()
+    def add_and_play_file(self, file_path):
+        self.add_file_to_playlist(file_path)
+        self.play_song(file_path)
 
-    def configure_styles(self):
-        self.style.configure('TFrame', background='#2E2E2E')
-        self.style.configure('TLabel', background='#2E2E2E', foreground='#E0E0E0')
-        self.style.configure('TButton', background='#404040', foreground='#E0E0E0')
-        self.style.map('TButton', background=[('active', '#505050')])
-        self.style.configure('Horizontal.TProgressbar', background='#606060', troughcolor='#2E2E2E')
-        self.style.configure('Horizontal.TScale', background='#2E2E2E', troughcolor='#404040')
-        self.style.configure('Treeview', background='#363636', fieldbackground='#363636', foreground='#E0E0E0')
-        self.style.map('Treeview', background=[('selected', '#505050')])
-
-    def create_gui(self):
-        self.columnconfigure(0, weight=1)
-        self.rowconfigure(1, weight=1)
-
-        # Frame principal
-        main_frame = ttk.Frame(self)
-        main_frame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
-        main_frame.columnconfigure(0, weight=1)
-
-        # Información de la canción
-        self.song_info = ttk.Label(main_frame, text="", font=("Helvetica", 10), anchor="center", justify="center", wraplength=280)
-        self.song_info.grid(row=0, column=0, sticky="ew", pady=(5, 10))
-
-        # Barra de progreso
-        self.progress_bar = ttk.Progressbar(main_frame, length=290, mode='determinate')
-        self.progress_bar.grid(row=1, column=0, pady=(0, 5), sticky="ew")
-        self.progress_bar.bind("<Button-1>", self.set_position)
-
-        # Etiquetas de tiempo
-        time_frame = ttk.Frame(main_frame)
-        time_frame.grid(row=2, column=0, sticky="ew")
-        time_frame.columnconfigure(1, weight=1)
-
-        self.current_time_label = ttk.Label(time_frame, text="0:00", font=("Helvetica", 8))
-        self.current_time_label.grid(row=0, column=0, sticky="w")
-        self.total_time_label = ttk.Label(time_frame, text="0:00", font=("Helvetica", 8))
-        self.total_time_label.grid(row=0, column=2, sticky="e")
-
-        # Botones de control
-        control_frame = ttk.Frame(main_frame)
-        control_frame.grid(row=3, column=0, pady=10)
-
-        ttk.Button(control_frame, text="⏮", command=self.prev_song, width=3).pack(side=tk.LEFT, padx=2)
-        self.play_pause_button = ttk.Button(control_frame, text="▶", command=self.play_pause, width=3)
-        self.play_pause_button.pack(side=tk.LEFT, padx=2)
-        ttk.Button(control_frame, text="⏹", command=self.stop, width=3).pack(side=tk.LEFT, padx=2)
-        ttk.Button(control_frame, text="⏭", command=self.next_song, width=3).pack(side=tk.LEFT, padx=2)
-
-        # Control de volumen
-        volume_frame = ttk.Frame(main_frame)
-        volume_frame.grid(row=4, column=0, pady=5, sticky="ew")
-        volume_frame.columnconfigure(1, weight=1)
-
-        self.volume_label = ttk.Label(volume_frame, text="Vol: 95%", font=("Helvetica", 8))
-        self.volume_label.grid(row=0, column=0, padx=(0, 5))
-        self.volume_scale = ttk.Scale(volume_frame, from_=0, to=100, orient=tk.HORIZONTAL, command=self.set_volume, value=95)
-        self.volume_scale.grid(row=0, column=1, sticky="ew")
-
-        # Lista de reproducción
-        playlist_frame = ttk.Frame(self)
-        playlist_frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
-        playlist_frame.columnconfigure(0, weight=1)
-        playlist_frame.rowconfigure(0, weight=1)
-
-        self.playlist_box = ttk.Treeview(playlist_frame, columns=("Título"), show="headings")
-        self.playlist_box.heading("Título", text="Playlist")
-        self.playlist_box.column("Título", anchor="w")
-        self.playlist_box.grid(row=0, column=0, sticky="nsew")
-
-        scrollbar = ttk.Scrollbar(playlist_frame, orient="vertical", command=self.playlist_box.yview)
-        scrollbar.grid(row=0, column=1, sticky="ns")
+    def check_for_new_file(self):
+        try:
+            if os.path.exists('temp_file_path.txt'):
+                with open('temp_file_path.txt', 'r') as f:
+                    file_path = f.read().strip()
+                os.remove('temp_file_path.txt')
+                self.add_and_play_file(file_path)
+        except Exception as e:
+            print(f"Error al verificar nuevo archivo: {e}")
+        self.after(100, self.check_for_new_file)
+    
+    def on_drop(self, event):
+        files = self.tk.splitlist(event.data)
+        for file_path in files:
+            self.add_file_to_playlist(file_path)
+        self.sort_playlist()
+        
+    def create_widgets(self):
+        main_frame = ttk.Frame(self, padding=10)
+        main_frame.pack(fill=BOTH, expand=YES)
+        
+        self.metadata_frame = ttk.Frame(main_frame)
+        self.metadata_frame.pack(fill=X, pady=5)
+        
+        self.title_label = ttk.Label(self.metadata_frame, text="", font=("TkDefaultFont", 10, "bold"))
+        self.title_label.pack(fill=X)
+        
+        self.artist_label = ttk.Label(self.metadata_frame, text="", font=("TkDefaultFont", 9))
+        self.artist_label.pack(fill=X)
+        
+        self.visualizer = tk.Canvas(main_frame, height=50, bg='#000000', highlightthickness=0)
+        self.visualizer.pack(fill=X, pady=5)
+        
+        self.progress_frame = ttk.Frame(main_frame)
+        self.progress_frame.pack(fill=X, pady=5)
+        
+        self.current_time = ttk.Label(self.progress_frame, text="0:00", width=5)
+        self.current_time.pack(side=LEFT)
+        
+        self.progress_bar = ttk.Scale(self.progress_frame, orient=HORIZONTAL, from_=0, to=100)
+        self.progress_bar.pack(side=LEFT, fill=X, expand=YES, padx=5)
+        self.progress_bar.bind("<ButtonRelease-1>", self.set_position)
+        
+        self.total_time = ttk.Label(self.progress_frame, text="0:00", width=5)
+        self.total_time.pack(side=RIGHT)
+        
+        self.control_frame = ttk.Frame(main_frame)
+        self.control_frame.pack(pady=5)
+        
+        button_style = lambda name: ttk.Button(self.control_frame, style='info-outline', width=3)
+        
+        self.prev_button = button_style("prev")
+        self.prev_button.configure(text="⏮", command=self.previous_song)
+        self.prev_button.pack(side=LEFT, padx=2)
+        
+        self.play_button = button_style("play")
+        self.play_button.configure(text="▶", command=self.play_pause)
+        self.play_button.pack(side=LEFT, padx=2)
+        
+        self.stop_button = button_style("stop")
+        self.stop_button.configure(text="⏹", command=self.stop)
+        self.stop_button.pack(side=LEFT, padx=2)
+        
+        self.next_button = button_style("next")
+        self.next_button.configure(text="⏭", command=self.next_song)
+        self.next_button.pack(side=LEFT, padx=2)
+        
+        self.playlist_frame = ttk.Frame(main_frame)
+        self.playlist_frame.pack(pady=5, fill=BOTH, expand=YES)
+        
+        self.playlist_box = ttk.Treeview(self.playlist_frame, columns=("title",), show="headings", style='info', height=10)
+        self.playlist_box.heading("title", text="Playlist", anchor=W)
+        self.playlist_box.column("title", width=200)
+        self.playlist_box.pack(side=LEFT, fill=BOTH, expand=YES)
+        
+        scrollbar = ttk.Scrollbar(self.playlist_frame, orient=VERTICAL, command=self.playlist_box.yview)
+        scrollbar.pack(side=RIGHT, fill=Y)
         self.playlist_box.configure(yscrollcommand=scrollbar.set)
-
-        self.playlist_box.drop_target_register(DND_FILES)
-        self.playlist_box.dnd_bind('<<Drop>>', self.drop_files)
-        self.playlist_box.bind('<Double-1>', self.on_playlist_double_click)
-        self.playlist_box.bind('<Delete>', self.remove_song)
-
-    def _update_thread(self):
-        while True:
-            self.update_progress()
-            time.sleep(0.1)
-
+        
+        if DND_FILES:
+            self.playlist_box.drop_target_register(DND_FILES)
+            self.playlist_box.dnd_bind("<<Drop>>", self.add_file)
+        self.playlist_box.bind("<Delete>", self.remove_selected_song)
+        self.playlist_box.bind("<Double-1>", self.on_double_click)
+        
+        # Widget para mostrar la duración total de la playlist
+        self.total_duration_label = ttk.Label(main_frame, text="Duración total: 0:00:00")
+        self.total_duration_label.pack(pady=5)
+        
+    def play_pause(self):
+        if not self.is_playing and self.current_song:
+            self.play()
+        elif self.is_playing:
+            self.pause()
+        elif not self.current_song and self.playlist:
+            self.play_song(self.playlist[0])
+    
+    def play(self):
+        if not self.is_playing:
+            self.is_playing = True
+            self.play_button.configure(text="⏸")
+            if not self.audio_thread or not self.audio_thread.is_alive():
+                self.audio_thread = threading.Thread(target=self.audio_callback)
+                self.audio_thread.start()
+    
+    def pause(self):
+        self.is_playing = False
+        self.play_button.configure(text="▶")
+    
+    def stop(self):
+        self.is_playing = False
+        self.play_button.configure(text="▶")
+        self.progress_bar.set(0)
+        self.current_time.configure(text="0:00")
+        self.current_sample = 0
+        if self.stream:
+            self.stream.stop()
+        if self.audio_thread:
+            self.audio_thread.join(timeout=0.5)
+    
     def set_position(self, event):
-        if self.player.current_song is not None:
+        if self.current_song and self.total_samples > 0:
             width = self.progress_bar.winfo_width()
             click_position = event.x / width
-            self.player.set_position(click_position)
-            self.update_progress()
-
-    def drop_files(self, event):
-        files = self.tk.splitlist(event.data)
-        for file in files:
-            if file.lower().endswith(('.mp3', '.wav', '.ogg', '.flac')):
-                self.add_song(file)
-
-    def add_song(self, file_path):
-        if os.path.isfile(file_path):
-            try:
-                title, artist = self.get_audio_metadata(file_path)
-                self.playlist.append((file_path, title, artist))
-                self.playlist_box.insert("", tk.END, values=(f"{artist} - {title}",))
-                if self.player.current_song is None:
-                    self.current_song_index = 0
-                    if self.player.load(file_path):
-                        self.play_song()
-                    else:
-                        raise Exception("No se pudo cargar el archivo de audio")
-            except Exception as e:
-                logging.error(f"No se pudo añadir el archivo: {file_path}. Error: {str(e)}")
-                messagebox.showerror("Error", f"No se pudo añadir el archivo: {os.path.basename(file_path)}\nError: {str(e)}")
-
-    def get_audio_metadata(self, file_path):
-        try:
-            logging.debug(f"Procesando archivo: {file_path}")
-            audio = File(file_path, easy=True)
-            logging.debug(f"Metadatos raw: {audio}")
-            
-            title = self.get_first_value(audio.get('title', []))
-            artist = self.get_first_value(audio.get('artist', []))
-            
-            if not title:
-                title = os.path.splitext(os.path.basename(file_path))[0]
-            if not artist:
-                artist = 'Desconocido'
-            
-            logging.debug(f"Metadatos procesados - Título: {title}, Artista: {artist}")
-            return title, artist
-        except Exception as e:
-            logging.error(f"Error al obtener metadatos de {file_path}: {str(e)}")
-            return os.path.splitext(os.path.basename(file_path))[0], 'Desconocido'
-
-    def get_first_value(self, value):
-        if isinstance(value, (list, tuple)) and value:
-            return self.get_first_value(value[0])
-        elif isinstance(value, str):
-            return value
-        elif isinstance(value, np.ndarray):
-            if value.size > 0:
-                return self.get_first_value(value.item())
-            else:
-                return ''
-        elif hasattr(value, 'text'):
-            return value.text
-        else:
-            return str(value)
-
-    def remove_song(self, event=None):
-        selected = self.playlist_box.selection()
-        if selected:
-            index = self.playlist_box.index(selected[0])
-            self.playlist_box.delete(selected[0])
-            del self.playlist[index]
-            if not self.playlist:
-                self.stop()
-                self.player.current_song = None
-                self.current_song_index = -1
-                self.update_song_info()
-
-    def on_playlist_double_click(self, event):
-        selection = self.playlist_box.selection()
-        if selection:
-            index = self.playlist_box.index(selection[0])
-            self.current_song_index = index
-            if self.player.load(self.playlist[index][0]):
-                self.play_song()
-
-    def play_pause(self):
-        if self.player.current_song is None:
-            return
-        if self.player.paused:
-            self.player.play()
-            self.play_pause_button.config(text="⏸")
-        else:
-            self.player.pause()
-            self.play_pause_button.config(text="▶")
-
-    def play_song(self):
-        self.player.play()
-        self.play_pause_button.config(text="⏸")
-        self.update_song_info()
-
-    def stop(self):
-        self.player.stop()
-        self.progress_bar["value"] = 0
-        self.play_pause_button.config(text="▶")
-        self.current_time_label.config(text="0:00")
-
-    def prev_song(self):
-        if self.playlist:
-            self.current_song_index = (self.current_song_index - 1) % len(self.playlist)
-            if self.player.load(self.playlist[self.current_song_index][0]):
-                self.play_song()
-
+            self.current_sample = int(click_position * self.total_samples)
+            self.current_sample = max(0, min(self.current_sample, self.total_samples - 1))
+            if not self.is_playing:
+                self.play()
+    
     def next_song(self):
         if self.playlist:
-            self.current_song_index = (self.current_song_index + 1) % len(self.playlist)
-            if self.player.load(self.playlist[self.current_song_index][0]):
-                self.play_song()
-
-    def set_volume(self, val):
-        volume = float(val) / 100
-        self.player.set_volume(volume)
-        self.volume_label.config(text=f"Vol: {int(float(val))}%")
-
-    def update_song_info(self):
-        if self.player.current_song is not None and 0 <= self.current_song_index < len(self.playlist):
-            song_info = self.playlist[self.current_song_index]
-            info_text = f"{song_info[2]}\n{song_info[1]}"
-            self.song_info.config(text=info_text)
-        else:
-            self.song_info.config(text="No se ha seleccionado ninguna canción")
-
-    def update_progress(self):
-        if self.player.current_song is not None:
-            position = self.player.get_position()
-            self.progress_bar["value"] = position * 100
-            
-            current_time = int(position * len(self.player.current_song) / self.player.samplerate)
-            total_time = len(self.player.current_song) // self.player.samplerate
-            
-            self.current_time_label.config(text=self.format_time(current_time))
-            self.total_time_label.config(text=self.format_time(total_time))
-
-    def format_time(self, seconds):
-        minutes, seconds = divmod(int(seconds), 60)
-        return f"{minutes}:{seconds:02d}"
-
-    def get_app_data_path(self):
-        if getattr(sys, 'frozen', False):
-            # Si es una aplicación empaquetada (exe)
-            return os.path.dirname(sys.executable)
-        else:
-            # Si se está ejecutando desde el script
-            return os.path.dirname(os.path.abspath(__file__))
-
-    def check_for_updates(self):
-        last_check = self.load_last_check_date()
-        if datetime.now() - last_check >= timedelta(days=1):
-            threading.Thread(target=self._check_and_update, daemon=True).start()
-
-    def load_last_check_date(self):
-        try:
-            check_file = os.path.join(self.get_app_data_path(), 'last_update_check.txt')
-            with open(check_file, 'r') as f:
-                return datetime.fromisoformat(f.read().strip())
-        except FileNotFoundError:
-            return datetime.min
-        except Exception as e:
-            logging.error(f"Error al cargar la fecha de última comprobación: {e}")
-            return datetime.min
-
-    def save_last_check_date(self):
-        try:
-            check_file = os.path.join(self.get_app_data_path(), 'last_update_check.txt')
-            with open(check_file, 'w') as f:
-                f.write(datetime.now().isoformat())
-        except Exception as e:
-            logging.error(f"Error al guardar la fecha de última comprobación: {e}")
-
-    def _check_and_update(self):
-        try:
-            response = requests.get('https://api.github.com/repos/Wamphyre/Audio-W/releases/latest')
-            latest_release = json.loads(response.text)
-            latest_version = latest_release['tag_name']
-            current_version = self.get_current_version()
-
-            if latest_version > current_version:
-                messagebox.showinfo("Actualización disponible", 
-                                    f"Hay una nueva versión disponible: {latest_version}\n"
-                                    f"Por favor, visite nuestro repositorio para descargarla e instalarla:\n"
-                                    f"https://github.com/Wamphyre/Audio-W/releases")
+            current_index = self.playlist.index(self.current_song) if self.current_song in self.playlist else -1
+            if current_index < len(self.playlist) - 1:
+                next_index = current_index + 1
+                self.play_song(self.playlist[next_index])
             else:
-                logging.info("El software está actualizado.")
-        except Exception as e:
-            logging.error(f"Error al buscar actualizaciones: {str(e)}")
-        finally:
-            self.save_last_check_date()
+                self.stop()
+                self.update_playlist_highlight()
 
-    def get_current_version(self):
-        return "v1.1"
-
-def register_file_types():
-    file_types = ['.mp3', '.wav', '.ogg', '.flac']
-    executable = sys.executable
-    if executable.endswith('python.exe'):  # Si se está ejecutando desde el intérprete
-        executable = os.path.abspath(sys.argv[0])
-
-    for file_type in file_types:
+    def previous_song(self):
+        if self.playlist:
+            current_index = self.playlist.index(self.current_song) if self.current_song in self.playlist else 0
+            if current_index > 0:
+                prev_index = current_index - 1
+                self.play_song(self.playlist[prev_index])
+            else:
+                self.play_song(self.playlist[0])
+    
+    def add_file(self, event):
+        files = self.tk.splitlist(event.data)
+        for f in files:
+            self.add_file_to_playlist(f)
+        self.sort_playlist()
+    
+    def add_file_to_playlist(self, file_path):
+        if file_path.lower().endswith(('.mp3', '.wav', '.flac')):
+            try:
+                with sf.SoundFile(file_path) as f:
+                    duration = len(f) / f.samplerate
+                self.total_duration += duration
+                
+                self.playlist.append(file_path)
+                metadata = self.get_metadata(file_path)
+                title = metadata['title'] or os.path.basename(file_path)
+                self.playlist_box.insert('', tk.END, values=(title,))
+                
+                self.update_total_duration_display()
+            except Exception as e:
+                print(f"Error al verificar el archivo {file_path}: {e}")
+                messagebox.showerror("Error", f"El archivo {os.path.basename(file_path)} no es un archivo de audio válido.")
+    
+    def sort_playlist(self):
+        sorted_playlist = sorted(self.playlist, key=lambda x: self.get_track_number(x))
+        self.playlist = sorted_playlist
+        self.update_playlist_display()
+        self.update_total_duration_display()
+    
+    def get_track_number(self, file_path):
         try:
-            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, f"Software\\Classes\\{file_type}")
-            winreg.SetValue(key, "", winreg.REG_SZ, "Audio-W")
-            winreg.CloseKey(key)
+            audio = File(file_path, easy=True)
+            track = audio.get('tracknumber', ['0'])[0]
+            return int(track.split('/')[0])
+        except Exception:
+            return 0
+    
+    def update_playlist_display(self):
+        self.playlist_box.delete(*self.playlist_box.get_children())
+        for file_path in self.playlist:
+            metadata = self.get_metadata(file_path)
+            title = metadata['title'] or os.path.basename(file_path)
+            self.playlist_box.insert('', tk.END, values=(title,))
+        self.update_playlist_highlight()
+    
+    def remove_selected_song(self, event=None):
+        selection = self.playlist_box.selection()
+        if selection:
+            for item in selection:
+                index = self.playlist_box.index(item)
+                file_path = self.playlist[index]
+                self.playlist_box.delete(item)
+                del self.playlist[index]
+                
+                # Restar la duración de la canción eliminada
+                with sf.SoundFile(file_path) as f:
+                    duration = len(f) / f.samplerate
+                self.total_duration -= duration
             
-            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, "Software\\Classes\\Audio-W\\shell\\open\\command")
-            winreg.SetValue(key, "", winreg.REG_SZ, f'"{executable}" "%1"')
-            winreg.CloseKey(key)
-        except WindowsError as e:
-            logging.error(f"Error al registrar {file_type}: {e}")
+            if self.current_song not in self.playlist:
+                self.stop()
+                self.current_song = None
+                if self.playlist:
+                    self.play_song(self.playlist[0])
+                else:
+                    self.title_label.config(text="")
+                    self.artist_label.config(text="")
+            self.update_playlist_highlight()
+            self.update_total_duration_display()
+    
+    def on_double_click(self, event):
+        item = self.playlist_box.identify('item', event.x, event.y)
+        if item:
+            index = self.playlist_box.index(item)
+            self.play_song(self.playlist[index])
+    
+    def get_metadata(self, file_path):
+        try:
+            if file_path.lower().endswith('.mp3'):
+                audio = MP3(file_path)
+                title = str(audio.get('TIT2', [''])[0])
+                artist = str(audio.get('TPE1', [''])[0])
+            elif file_path.lower().endswith('.wav'):
+                audio = WAVE(file_path)
+                title = str(audio.get('title', [''])[0])
+                artist = str(audio.get('artist', [''])[0])
+            elif file_path.lower().endswith('.flac'):
+                audio = FLAC(file_path)
+                title = str(audio.get('title', [''])[0])
+                artist = str(audio.get('artist', [''])[0])
+            else:
+                return {'title': '', 'artist': ''}
+            
+            return {
+                'title': title or os.path.basename(file_path),
+                'artist': artist or 'Desconocido'
+            }
+        except Exception as e:
+            print(f"Error al obtener metadatos de {file_path}: {e}")
+            return {'title': os.path.basename(file_path), 'artist': 'Desconocido'}
+    
+    def play_song(self, song):
+        if self.play_future:
+            self.play_future.cancel()
+        self.stop()
+        self.current_song = song
+        self.play_future = self.executor.submit(self._load_and_play_song, song)
+
+    def _load_and_play_song(self, song):
+        try:
+            self.data, self.fs = sf.read(song)
+            if self.data.dtype != np.float32:
+                self.data = self.data.astype(np.float32)
+            self.total_samples = len(self.data)
+            self.current_sample = 0
+            
+            metadata = self.get_metadata(song)
+            self.after(0, lambda: self.title_label.config(text=metadata['title']))
+            self.after(0, lambda: self.artist_label.config(text=metadata['artist']))
+            
+            duration = self.total_samples / self.fs
+            self.after(0, lambda: self.total_time.config(text=f"{int(duration//60)}:{int(duration%60):02d}"))
+            
+            self.after(0, self.update_playlist_highlight)
+            self.after(0, self.play)
+        except Exception as e:
+            print(f"Error al reproducir la canción {song}: {e}")
+            self.after(0, self.next_song)
+
+    def update_playlist_highlight(self):
+        for item in self.playlist_box.get_children():
+            self.playlist_box.item(item, tags=())
+        
+        if self.current_song in self.playlist:
+            index = self.playlist.index(self.current_song)
+            item = self.playlist_box.get_children()[index]
+            self.playlist_box.item(item, tags=('playing',))
+            self.playlist_box.tag_configure('playing', background='#4E4E4E')
+
+    def audio_callback(self):
+        def callback(outdata, frames, time, status):
+            if status:
+                print(f'Error de estado: {status}')
+            
+            if self.is_playing and self.current_sample < self.total_samples:
+                end_sample = min(self.current_sample + frames, self.total_samples)
+                data = self.data[self.current_sample:end_sample]
+                if len(data) < frames:
+                    outdata[:len(data)] = data
+                    outdata[len(data):] = np.zeros((frames - len(data), self.data.shape[1]))
+                else:
+                    outdata[:] = data
+                self.current_sample = end_sample
+                
+                progress = self.current_sample / self.total_samples
+                current_time = self.current_sample / self.fs
+                
+                self.after(0, lambda: self.update_ui(progress, current_time))
+                
+                current_time_ms = python_time.time() * 1000
+                if current_time_ms - self.last_visualizer_update >= self.visualizer_update_interval:
+                    self.after(0, self.update_visualizer)
+                    self.last_visualizer_update = current_time_ms
+            else:
+                outdata.fill(0)
+                if self.current_sample >= self.total_samples:
+                    self.after(0, self.next_song)
+        
+        try:
+            self.stream = sd.OutputStream(
+                samplerate=self.fs, 
+                channels=self.data.shape[1], 
+                callback=callback,
+                blocksize=self.buffer_size,
+                latency='high'
+            )
+            with self.stream:
+                while self.is_playing:
+                    sd.sleep(100)
+        except Exception as e:
+            print(f"Error en audio_callback: {e}")
+            self.after(0, self.next_song)
+
+    def update_ui(self, progress, current_time):
+        self.progress_bar.set(progress * 100)
+        self.current_time.configure(text=f"{int(current_time//60)}:{int(current_time%60):02d}")
+    
+    def update_visualizer(self):
+        self.visualizer.delete("all")
+        for i in range(20):
+            height = np.random.randint(1, 50)
+            self.visualizer.create_rectangle(i*15, 50-height, (i+1)*15-1, 50, fill="#00FF00", outline="")
+    
+    def update_total_duration_display(self):
+        hours, remainder = divmod(int(self.total_duration), 3600)
+        minutes, seconds = divmod(remainder, 60)
+        self.total_duration_label.config(text=f"Duración total: {hours:02d}:{minutes:02d}:{seconds:02d}")
+    
+    def on_closing(self):
+        self.is_playing = False
+        if self.play_future:
+            self.play_future.cancel()
+        if self.stream:
+            self.stream.stop()
+        if self.audio_thread:
+            self.audio_thread.join(timeout=0.5)
+        self.executor.shutdown(wait=False)
+        self.destroy()
 
 def main():
-    if sys.platform.startswith('win'):
-        ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0)
-
+    app_instance = SingleInstanceApp()
+    
+    if app_instance.already_running():
+        print("La aplicación ya está en ejecución. Activando la ventana existente.")
+        if len(sys.argv) > 1:
+            file_path = sys.argv[1]
+            if app_instance.activate_running_instance(file_path):
+                sys.exit(0)
+        else:
+            if app_instance.activate_running_instance():
+                sys.exit(0)
+        print("No se pudo activar la instancia en ejecución. Iniciando una nueva instancia.")
+    
     app = AudioW()
+    
+    if len(sys.argv) > 1:
+        file_path = sys.argv[1]
+        app.after(100, lambda: app.add_and_play_file(file_path))
+    
     app.mainloop()
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "--register":
-        register_file_types()
-    else:
-        main()
+    main()

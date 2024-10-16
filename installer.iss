@@ -1,154 +1,124 @@
 #define MyAppName "Audio-W"
-#define MyAppVersion "1.1"
+#define MyAppVersion "1.2.0"
 #define MyAppPublisher "Wamphyre"
+#define MyAppURL "https://github.com/Wamphyre/Audio-W"
 #define MyAppExeName "Audio-W.exe"
 
 [Setup]
-AppId={{47551223-1DE9-4D36-ABF9-3D30ADE4F29B}}
+AppId={{D0E858DF-985E-4907-B7FB-8D732C3FC3B9}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
+AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
+AppPublisherURL={#MyAppURL}
+AppSupportURL={#MyAppURL}
+AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=Output
-OutputBaseFilename=Audio-W-Setup
+OutputBaseFilename=Audio-W-1.2-Setup
 SetupIconFile=icon.ico
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
+ArchitecturesInstallIn64BitMode=x64
 UninstallDisplayIcon={app}\{#MyAppExeName}
 UninstallDisplayName={#MyAppName}
-ChangesAssociations=yes
 
 [Languages]
-Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
-Name: "associateaudiofiles"; Description: "Asociar archivos de audio con Audio-W"; GroupDescription: "Asociación de archivos:"; Flags: unchecked
+Name: "associateaudiofiles"; Description: "Asociar archivos de audio con {#MyAppName}"; GroupDescription: "Asociaciones de archivo:"; Flags: unchecked
 
 [Files]
 Source: "dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\icon.ico"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\icon.ico"; Tasks: desktopicon
 
 [Registry]
-Root: HKCU; Subkey: "Software\Classes\Audio-W"; ValueType: string; ValueName: ""; ValueData: "Audio-W"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Classes\Audio-W"; ValueType: string; ValueName: "FriendlyAppName"; ValueData: "Audio-W"
-Root: HKCU; Subkey: "Software\Classes\Audio-W\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""
-Root: HKCU; Subkey: "Software\Classes\.mp3\OpenWithProgids"; ValueType: string; ValueName: "Audio-W"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associateaudiofiles
-Root: HKCU; Subkey: "Software\Classes\.wav\OpenWithProgids"; ValueType: string; ValueName: "Audio-W"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associateaudiofiles
-Root: HKCU; Subkey: "Software\Classes\.ogg\OpenWithProgids"; ValueType: string; ValueName: "Audio-W"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associateaudiofiles
-Root: HKCU; Subkey: "Software\Classes\.flac\OpenWithProgids"; ValueType: string; ValueName: "Audio-W"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associateaudiofiles
+Root: HKCR; Subkey: "Applications\{#MyAppExeName}"; ValueType: string; ValueName: "FriendlyAppName"; ValueData: "{#MyAppName}"; Flags: uninsdeletekey
+Root: HKCR; Subkey: "Applications\{#MyAppExeName}\DefaultIcon"; ValueType: string; ValueData: "{app}\{#MyAppExeName},0"; Flags: uninsdeletekey
+Root: HKCR; Subkey: "Applications\{#MyAppExeName}\shell\open\command"; ValueType: string; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Flags: uninsdeletekey
+Root: HKCR; Subkey: "Applications\{#MyAppExeName}\SupportedTypes"; ValueType: string; ValueName: ".mp3"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associateaudiofiles
+Root: HKCR; Subkey: "Applications\{#MyAppExeName}\SupportedTypes"; ValueType: string; ValueName: ".wav"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associateaudiofiles
+Root: HKCR; Subkey: "Applications\{#MyAppExeName}\SupportedTypes"; ValueType: string; ValueName: ".flac"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associateaudiofiles
+Root: HKCR; Subkey: ".mp3\OpenWithProgids"; ValueType: string; ValueName: "Applications.{#MyAppExeName}"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associateaudiofiles
+Root: HKCR; Subkey: ".wav\OpenWithProgids"; ValueType: string; ValueName: "Applications.{#MyAppExeName}"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associateaudiofiles
+Root: HKCR; Subkey: ".flac\OpenWithProgids"; ValueType: string; ValueName: "Applications.{#MyAppExeName}"; ValueData: ""; Flags: uninsdeletevalue; Tasks: associateaudiofiles
 
-[Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
-Filename: "{sys}\reg.exe"; Parameters: "import ""{tmp}\audio_w_association.reg"""; Flags: runhidden; StatusMsg: "Registering file associations..."; Tasks: associateaudiofiles
-
-[UninstallDelete]
-Type: filesandordirs; Name: "{app}"
+; Agregar Audio-W al menú contextual de archivos de audio
+Root: HKCR; Subkey: ".mp3\shell\{#MyAppName}"; ValueType: string; ValueData: "Reproducir con {#MyAppName}"; Flags: uninsdeletekey; Tasks: associateaudiofiles
+Root: HKCR; Subkey: ".mp3\shell\{#MyAppName}\command"; ValueType: string; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Flags: uninsdeletekey; Tasks: associateaudiofiles
+Root: HKCR; Subkey: ".wav\shell\{#MyAppName}"; ValueType: string; ValueData: "Reproducir con {#MyAppName}"; Flags: uninsdeletekey; Tasks: associateaudiofiles
+Root: HKCR; Subkey: ".wav\shell\{#MyAppName}\command"; ValueType: string; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Flags: uninsdeletekey; Tasks: associateaudiofiles
+Root: HKCR; Subkey: ".flac\shell\{#MyAppName}"; ValueType: string; ValueData: "Reproducir con {#MyAppName}"; Flags: uninsdeletekey; Tasks: associateaudiofiles
+Root: HKCR; Subkey: ".flac\shell\{#MyAppName}\command"; ValueType: string; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Flags: uninsdeletekey; Tasks: associateaudiofiles
 
 [Code]
-#ifdef UNICODE
-  #define AW "W"
-#else
-  #define AW "A"
-#endif
-
-const
-  SMTO_ABORTIFHUNG = $0002;
-  WM_SETTINGCHANGE = $001A;
-
-type
-  WPARAM = UINT_PTR;
-  LPARAM = INT_PTR;
-  LRESULT = INT_PTR;
-
-function SendMessageTimeout(hWnd: HWND; Msg: UINT; wParam: WPARAM; lParam: LPARAM; fuFlags: UINT; uTimeout: UINT; var lpdwResult: DWORD): LRESULT;
-  external 'SendMessageTimeout{#AW}@user32.dll stdcall';
-
-procedure RefreshEnvironment;
-var
-  S: string;
-  I: DWORD;
-begin
-  S := 'Environment';
-end;
-
-procedure CreateAssociationFile();
-var
-  FileName: string;
-  Lines: TStringList;
-begin
-  FileName := ExpandConstant('{tmp}\audio_w_association.reg');
-  Lines := TStringList.Create;
-  try
-    Lines.Add('Windows Registry Editor Version 5.00');
-    Lines.Add('');
-    Lines.Add('[HKEY_CURRENT_USER\Software\Classes\.mp3]');
-    Lines.Add('"Audio-W"=""');
-    Lines.Add('');
-    Lines.Add('[HKEY_CURRENT_USER\Software\Classes\.wav]');
-    Lines.Add('"Audio-W"=""');
-    Lines.Add('');
-    Lines.Add('[HKEY_CURRENT_USER\Software\Classes\.ogg]');
-    Lines.Add('"Audio-W"=""');
-    Lines.Add('');
-    Lines.Add('[HKEY_CURRENT_USER\Software\Classes\.flac]');
-    Lines.Add('"Audio-W"=""');
-    Lines.SaveToFile(FileName);
-  finally
-    Lines.Free;
-  end;
-end;
-
 procedure CurStepChanged(CurStep: TSetupStep);
+var
+  ResultCode: Integer;
+  UninstallExe: String;
+  ErrorCode: Integer;
 begin
-  if CurStep = ssPostInstall then
+  if CurStep = ssInstall then
   begin
-    if WizardIsTaskSelected('associateaudiofiles') then
+    if RegKeyExists(HKEY_LOCAL_MACHINE, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#SetupSetting("AppId")}_is1') then
     begin
-      CreateAssociationFile();
+      if MsgBox('Se ha detectado una versión anterior de {#MyAppName}. ¿Desea desinstalarla antes de continuar?', mbConfirmation, MB_YESNO) = IDYES then
+      begin
+        if RegQueryStringValue(HKEY_LOCAL_MACHINE, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#SetupSetting("AppId")}_is1', 'UninstallString', UninstallExe) then
+        begin
+          UninstallExe := RemoveQuotes(UninstallExe);
+          if Exec(UninstallExe, '/SILENT', '', SW_SHOW, ewWaitUntilTerminated, ResultCode) then
+          begin
+            // La desinstalación se completó correctamente
+          end
+          else
+        end
+        else
+        begin
+          MsgBox('No se pudo encontrar el desinstalador de la versión anterior.', mbError, MB_OK);
+        end;
+      end;
     end;
   end;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
-  mRes : integer;
+  ResultCode: Integer;
 begin
-  case CurUninstallStep of
-    usUninstall:
-      begin
-        mRes := MsgBox('¿Desea eliminar también los archivos de datos de la aplicación?' + #13#10 + 'Esto incluirá configuraciones y otros datos guardados.', mbConfirmation, MB_YESNO or MB_DEFBUTTON2);
-        if mRes = IDYES then
-        begin
-          DelTree(ExpandConstant('{userappdata}\{#MyAppName}'), True, True, True);
-        end;
-        
-        // Eliminar asociaciones de archivos
-        RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Classes\Audio-W');
-        RegDeleteValue(HKCU, 'Software\Classes\.mp3\OpenWithProgids', 'Audio-W');
-        RegDeleteValue(HKCU, 'Software\Classes\.wav\OpenWithProgids', 'Audio-W');
-        RegDeleteValue(HKCU, 'Software\Classes\.ogg\OpenWithProgids', 'Audio-W');
-        RegDeleteValue(HKCU, 'Software\Classes\.flac\OpenWithProgids', 'Audio-W');
-      end;
-    usPostUninstall:
-      begin
-        if DirExists(ExpandConstant('{app}')) then
-        begin
-          if MsgBox('Se han detectado archivos residuales. ¿Desea eliminarlos?', mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
-          begin
-            DelTree(ExpandConstant('{app}'), True, True, True);
-          end;
-        end;
-        
-        // Refrescar el entorno para actualizar los iconos y asociaciones
-        RefreshEnvironment;
-      end;
+  if CurUninstallStep = usPostUninstall then
+  begin
+    // Limpiar registros
+    RegDeleteKeyIncludingSubkeys(HKCR, 'Applications\{#MyAppExeName}');
+    RegDeleteKeyIncludingSubkeys(HKCR, '.mp3\OpenWithProgids\Applications.{#MyAppExeName}');
+    RegDeleteKeyIncludingSubkeys(HKCR, '.wav\OpenWithProgids\Applications.{#MyAppExeName}');
+    RegDeleteKeyIncludingSubkeys(HKCR, '.flac\OpenWithProgids\Applications.{#MyAppExeName}');
+    RegDeleteKeyIncludingSubkeys(HKCR, '.mp3\shell\{#MyAppName}');
+    RegDeleteKeyIncludingSubkeys(HKCR, '.wav\shell\{#MyAppName}');
+    RegDeleteKeyIncludingSubkeys(HKCR, '.flac\shell\{#MyAppName}');
+
+    // Eliminar asociaciones de archivo
+    RegDeleteValue(HKCR, '.mp3\OpenWithProgids', 'Applications.{#MyAppExeName}');
+    RegDeleteValue(HKCR, '.wav\OpenWithProgids', 'Applications.{#MyAppExeName}');
+    RegDeleteValue(HKCR, '.flac\OpenWithProgids', 'Applications.{#MyAppExeName}');
+
+    // Eliminar entradas del menú de inicio y escritorio
+    DeleteFile(ExpandConstant('{commonprograms}\{#MyAppName}.lnk'));
+    DeleteFile(ExpandConstant('{userdesktop}\{#MyAppName}.lnk'));
+
+    // Eliminar datos de usuario si el usuario lo desea
+    if MsgBox('¿Desea eliminar todos los archivos de configuración y datos de usuario de {#MyAppName}?', mbConfirmation, MB_YESNO) = IDYES then
+    begin
+      DelTree(ExpandConstant('{userappdata}\{#MyAppName}'), True, True, True);
+    end;
   end;
 end;

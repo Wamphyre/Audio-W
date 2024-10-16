@@ -1,9 +1,7 @@
 ttkbootstrap
 tkinterdnd2
-Pillow
 sounddevice
 soundfile
-numpy
-scipy
-requests
 mutagen
+numpy
+pywin32
