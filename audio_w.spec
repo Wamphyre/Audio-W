@@ -18,7 +18,7 @@ a = Analysis(['audio_w.py'],
                  (icon_path, '.'),
                  (tkdnd_path, 'tkinterdnd2/tkdnd')
              ],
-             hiddenimports=['tkinterdnd2', 'ttkbootstrap', 'sounddevice', 'soundfile', 'mutagen', 'numpy', 'win32api', 'win32gui', 'win32con'],
+             hiddenimports=['tkinterdnd2', 'ttkbootstrap', 'sounddevice', 'soundfile', 'mutagen', 'numpy', 'win32api', 'win32gui', 'win32con', 'win32event'],
              hookspath=[],
              hooksconfig={},
              runtime_hooks=[],
@@ -45,17 +45,11 @@ exe = EXE(pyz,
           runtime_tmpdir=None,
           console=False,
           disable_windowed_traceback=False,
-          target_arch='x86_64',
+          target_arch=None,
           codesign_identity=None,
           entitlements_file=None,
           icon=icon_path,
           version='file_version_info.txt')
-
-# Configuración adicional para asegurar la compilación de 64 bits
-if sys.platform == 'win32':
-    import platform
-    if platform.architecture()[0] == '64bit':
-        a.binaries = [x for x in a.binaries if not x[0].startswith("msvcp")]
 
 # Optimizaciones adicionales
 exe.optimize = 2

@@ -1,5 +1,5 @@
 #define MyAppName "Audio-W"
-#define MyAppVersion "1.2.0"
+#define MyAppVersion "1.3.0"
 #define MyAppPublisher "Wamphyre"
 #define MyAppURL "https://github.com/Wamphyre/Audio-W"
 #define MyAppExeName "Audio-W.exe"
@@ -16,12 +16,12 @@ AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=Output
-OutputBaseFilename=Audio-W-1.2-Setup
+OutputBaseFilename=Audio-W-1.3-Setup
 SetupIconFile=icon.ico
-Compression=lzma
+Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
-ArchitecturesInstallIn64BitMode=x64
+ArchitecturesInstallIn64BitMode=x64os
 UninstallDisplayIcon={app}\{#MyAppExeName}
 UninstallDisplayName={#MyAppName}
 
@@ -65,7 +65,6 @@ procedure CurStepChanged(CurStep: TSetupStep);
 var
   ResultCode: Integer;
   UninstallExe: String;
-  ErrorCode: Integer;
 begin
   if CurStep = ssInstall then
   begin
@@ -76,11 +75,7 @@ begin
         if RegQueryStringValue(HKEY_LOCAL_MACHINE, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#SetupSetting("AppId")}_is1', 'UninstallString', UninstallExe) then
         begin
           UninstallExe := RemoveQuotes(UninstallExe);
-          if Exec(UninstallExe, '/SILENT', '', SW_SHOW, ewWaitUntilTerminated, ResultCode) then
-          begin
-            // La desinstalación se completó correctamente
-          end
-          else
+          Exec(UninstallExe, '/SILENT', '', SW_SHOW, ewWaitUntilTerminated, ResultCode);
         end
         else
         begin
@@ -92,8 +87,6 @@ begin
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
-var
-  ResultCode: Integer;
 begin
   if CurUninstallStep = usPostUninstall then
   begin
